@@ -1,0 +1,77 @@
+docker-compose up --build -d
+
+
+docker exec -it ksqldb-cli ksql http://ksqldb-server:8088
+
+CREATE STREAM nasa_logs_raw (
+    host VARCHAR,
+    timestamp VARCHAR,
+    method VARCHAR,
+    url VARCHAR,
+    protocol VARCHAR,
+    status INT,
+    bytes INT
+) WITH (
+    KAFKA_TOPIC='nasa_access_logs', 
+    VALUE_FORMAT='JSON'
+);
+
+CREATE STREAM nasa_html_only AS
+SELECT 
+    url,
+    status,
+    CASE 
+        WHEN status = 200 THEN 1 
+        ELSE 0 
+    END AS is_success,
+    CASE 
+        WHEN status >= 400 THEN 1 
+        ELSE 0 
+    END AS is_error
+FROM nasa_logs_raw
+WHERE url LIKE '%.html%'; -- Берем .html
+
+
+CREATE TABLE url_metrics AS
+SELECT 
+    url,
+    COUNT(*) AS total_requests,
+    SUM(is_success) AS success_count,
+    SUM(is_error) AS error_count,
+    (CAST(SUM(is_success) AS DOUBLE) / COUNT(*)) * 100 AS success_rate_percent
+FROM nasa_html_only
+GROUP BY url
+EMIT CHANGES;
+
+#####WINDOW TUMBLING (SIZE 24 HOURS) -- Группировка по суткам
+
+docker exec -it postgres psql -U user -d nasa_analytics
+
+CREATE TABLE "URL_METRICS" (
+    "url" TEXT PRIMARY KEY,
+    "total_requests" BIGINT,
+    "success_count" BIGINT,
+    "error_count" BIGINT,
+    "success_rate_percent" DOUBLE PRECISION
+);
+
+docker exec -it postgres psql -U user -d nasa_analytics -c 'SELECT * FROM "URL_METRICS" LIMIT 5;'
+
+
+SELECT 
+  url AS "URL", 
+  total_requests AS "Requests"
+FROM "URL_METRICS"
+ORDER BY total_requests DESC
+LIMIT 15;
+
+
+SELECT 
+  url AS "URL", 
+  total_requests AS "Requests",
+  success_rate_percent AS "Success Rate %",
+  success_count AS "Success",
+  error_count AS "Errors"
+FROM "URL_METRICS"
+
+SELECT SUM(error_count) FROM "URL_METRICS";

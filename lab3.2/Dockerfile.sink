@@ -1,0 +1,14 @@
+FROM python:3.14-slim
+
+# Устанавливаем зависимости для psycopg2 (библиотека для работы с Postgres)
+
+WORKDIR /app
+
+# Копируем и устанавливаем зависимости
+RUN pip install --no-cache-dir psycopg2-binary
+RUN pip install --no-cache-dir kafka-python
+
+# Копируем сам скрипт
+COPY sink.py .
+
+CMD ["python", "-u", "sink.py"]

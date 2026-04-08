@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 5s # Как часто обновлять данные
+
+scrape_configs:
+  - job_name: 'docker-containers'
+    static_configs:
+      - targets: ['cadvisor:8080']

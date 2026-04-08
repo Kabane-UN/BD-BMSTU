@@ -1,0 +1,154 @@
+version: '3.8'
+
+services:
+  # Zookeeper следит за состоянием кластера Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.8
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  # Сам брокер Kafka, где будут храниться наши топики
+  kafka:
+    image: confluentinc/cp-kafka:7.7.8
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "29092:29092" # Для внешних скриптов (нашего продюсера)
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+  # Сервер ksqlDB для обработки потоков
+  ksqldb-server:
+    image: confluentinc/cp-ksqldb-server:7.9.6
+    container_name: ksqldb-server
+    depends_on:
+      - kafka
+    ports:
+      - "8088:8088"
+    environment:
+      KSQL_BOOTSTRAP_SERVERS: kafka:9092
+      KSQL_LISTENERS: http://0.0.0.0:8088
+      KSQL_KSQL_SERVICE_ID: lab_service_1
+
+  # Клиент ksqlDB (консоль), чтобы заходить и писать SQL-запросы
+  ksqldb-cli:
+    image: confluentinc/cp-ksqldb-cli:7.9.6
+    container_name: ksqldb-cli
+    depends_on:
+      - ksqldb-server
+    entrypoint: /bin/sh
+    tty: true
+
+  # Web-UI для визуального контроля топиков
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_METRICS_PORT: 9997
+  # Наш самописный продюсер
+  log-producer:
+    build: .
+    container_name: log-producer
+    depends_on:
+      - kafka
+    environment:
+      # Переопределяем адрес брокера для работы внутри Docker-сети
+      KAFKA_SERVER: "kafka:9092"
+    restart: always
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8081:8080"
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Пароль для входа
+  postgres:
+    image: postgres:18
+    container_name: postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: nasa_analytics
+    ports:
+      - "5432:5432"
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.9.6
+    container_name: kafka-connect
+    depends_on:
+      - kafka
+      - postgres
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: "connect-group"
+      CONNECT_CONFIG_STORAGE_TOPIC: "connect-configs"
+      CONNECT_OFFSET_STORAGE_TOPIC: "connect-offsets"
+      CONNECT_STATUS_STORAGE_TOPIC: "connect-status"
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
+      # Фактор репликации для внутренних топиков коннекта тоже ставим 1
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components"
+    command: 
+      - /bin/bash
+      - -c 
+      - |
+        confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:10.7.4
+        /etc/confluent/docker/run
+    ports:
+      - "8083:8083"
+  python-sink:
+    build:
+      context: .
+      dockerfile: Dockerfile.sink
+    container_name: python-sink
+    depends_on:
+      - kafka
+      - postgres
+    restart: always
+    environment:
+      # Переопределяем адрес брокера для работы внутри Docker-сети
+      KAFKA_SERVER: "kafka:9092"

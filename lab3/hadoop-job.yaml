@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hadoop-job
+spec:
+  template:
+    spec:
+      containers:
+      - name: hadoop
+        image: apache/hadoop:3.4.3
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            echo "Checking data folder:"
+            ls -l /data
+            rm -rf /data/output
+            STREAMING_JAR=$(find /opt/hadoop -name "hadoop-streaming*.jar" | grep -v sources | head -n 1)
+
+            hadoop jar $STREAMING_JAR \
+              -D mapreduce.job.reduces=2 \
+              -input /data/access.log \
+              -output /data/output \
+              -mapper "python3 /data/mapper.py" \
+              -reducer "python3 /data/reducer.py"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+      restartPolicy: Never
+      volumes:
+      - name: data-volume
+        hostPath:
+          path: /run/desktop/mnt/host/c/Work

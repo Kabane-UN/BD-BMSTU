@@ -1,0 +1,129 @@
+hadoop@localhost:/home/hadoop/lab$ history
+    1  ls
+    2  cd /home/hadoop
+    3  ls
+    4  cd lab
+    5  ls
+    6  hadoop jar $STREAMING_JAR -D mapreduce.job.reduces=2 -input /home/hadoop/lab/access.log -output /home/hadoop/lab/output_hadoop -mapper "python3 /home/hadoop/lab/mapper.py" -reducer "python3 /home/hadoop/lab/reducer.py"
+    7  STREAMING_JAR=$(find /opt/hadoop -name "hadoop-streaming*.jar" | grep -v sources | head -n 1)
+    8  hadoop jar $STREAMING_JAR -D mapreduce.job.reduces=2 -input /home/hadoop/lab/access.log -output /home/hadoop/lab/output_hadoop -mapper "python3 /home/hadoop/lab/mapper.py" -reducer "python3 /home/hadoop/lab/reducer.py"
+    9  ll
+   10  ls
+   11  rm output_hadoop
+   12  rm -rf output_hadoop
+   13  hadoop jar $STREAMING_JAR -D mapreduce.job.reduces=2 -input /home/hadoop/lab/access.log -output /home/hadoop/lab/output_hadoop -mapper "python3 /home/hadoop/lab/mapper.py" -reducer "python3 /home/hadoop/lab/reducer.py"
+   14  hadoop jar $STREAMING_JAR -D mapreduce.job.reduces=2 -input /home/hadoop/lab/access.log -output /home/hadoop/lab/output_hadoop -mapper "python3 /home/hadoop/lab/mapper.py" -reducer "python3 /home/hadoop/lab/reducer.py"
+   15  rm -rf output_hadoop
+   16  hadoop jar $STREAMING_JAR -D mapreduce.job.reduces=2 -input /home/hadoop/lab/access.log -output /home/hadoop/lab/output_hadoop -mapper "python3 /home/hadoop/lab/mapper.py" -reducer "python3 /home/hadoop/lab/reducer.py"
+   17  cat /home/hadoop/lab/output_hadoop/part-*
+   18  cat /home/hadoop/lab/output_hadoop/part-* | sort -k2 -nr | head -n 10
+   19  grep "NASA-logosmall.gif" access.log | wc -l
+   20  rm -rf output_hadoop
+   21  hadoop jar $STREAMING_JAR -D mapreduce.job.reduces=2 -input /home/hadoop/lab/access.log -output /home/hadoop/lab/output_hadoop -mapper "python3 /home/hadoop/lab/mapper.py" -reducer "python3 /home/hadoop/lab/reducer.py"
+   22  cat /root/lab/output_full/part-00000
+   23  cat output_hadoop/part-00000
+   24  cat output_hadoop/part-*
+   25  cat /home/hadoop/lab/output_full/part-* | grep -E "URL:|Всего запросов:" | sed 'N;s/\n/ /' | sort -k4 -nr | head -n 10
+   26  cat output_hadoop/part-* | grep -E "URL:|Всего запросов:" | sed 'N;s/\n/ /' | sort -k4 -nr | head -n 10
+   27  cat output_hadoop/part-* | awk -v RS="------------------------------" '/Аномально (много|мало): [^нет]/ {print $0 "------------------------------"}'
+   28  cat output_hadoop/part-* | grep -E "URL:|Всего запросов:" | sed 'N;s/\n/ /' | sort -k4 -nr | head -n 10
+   29  cat output_hadoop/part-* | grep -E "URL:|Всего запросов:" | sed 'N;s/\n/ /' | sort -t: -k3 -nr | head -n 10
+   30  cat output_hadoop/part-* | awk -v RS="------------------------------" '/Аномально (много|мало): [^нет]/ {print $0 "------------------------------"}'
+   31  cat output_hadoop/part-* | awk -v RS="------------------------------" '/URL: (\/|(\/images\/NASA-logosmall.gif)|(\/images\/KSC-logosmall.gif)|(\/ksc.html)|(\/images\/USA-logosmall.gif)|(\/images\/WORLD-logosmall.gif)|(\/images\/ksclogo-medium.gif)|(\/history\/apollo\/images\/apollo-logo1.gif)|(\/images\/launch-logo.gif)|(\/shuttle\/missions\/sts-69\/sts-69-patch-small.gif))/ \
+&& /Аномально (много|мало): [^нет]/ {print $0 "------------------------------"}'
+   32* 
+   33  cat output_hadoop/part-* | awk -v RS="------------------------------" '
+{
+    # Убираем лишние переносы строк, чтобы сделать блок одной строкой
+    gsub(/\n/, " ", $0); 
+    # Выводим, если в строке есть данные
+    if ($0 ~ /URL:/) print $0
+}' | sort -t: -k3 -nr | head -n 10
+   34  cat output_hadoop/part-* | awk -v RS="------------------------------" '
+/URL:/ {
+    # Извлекаем URL
+    match($0, /URL: ([^ ]+)/, u); url = u[1];
+    # Извлекаем общее кол-во
+    match($0, /Всего запросов: ([0-9]+)/, c); count = c[1];
+    # Извлекаем проценты 200-х
+    match($0, /статус 200 - [^,]+, ([0-9.]+%)/, p); perc200 = p[1];
+    # Извлекаем аномалии (если есть)
+    match($0, /Аномально много: ([^А]+)/, a); 
+    anom = a[1]; gsub(/^[ \t]+|[ \t]+$/, "", anom);
+    if (anom == "нет") anom = "-";
+
+    print url " | " count " | " perc200 " | " anom
+}' | sort -t'|' -k2 -nr | head -n 10 | column -t -s '|'
+   35  cat output_hadoop/part-* | awk -v RS="------------------------------" '
+/URL:/ {
+    # Извлекаем URL
+    match($0, /URL: ([^ ]+)/, u); url = u[1];
+    # Извлекаем общее кол-во
+    match($0, /Всего запросов: ([0-9]+)/, c); count = c[1];
+    # Извлекаем проценты 200-х
+    match($0, /статус 200 - [^,]+, ([0-9.]+%)/, p); perc200 = p[1];
+    # Извлекаем аномалии (если есть)
+    match($0, /Аномально много: ([^А]+)/, a); 
+    anom = a[1]; gsub(/^[ \t]+|[ \t]+$/, "", anom);
+    if (anom == "нет") anom = "-";
+
+    print url " | " count " | " perc200 " | " anom
+}' | sort -t'|' -k2 -nr | head -n 10 | column -t -s '|'
+   36  cat output_hadoop/part-* | grep -E "URL:|Всего запросов:" | sed 'N;s/\n/ /' | sort -k4 -nr | head -n 10
+   37  cat output_hadoop/part-* | grep -E "URL:|Всего запросов:" | sed 'N;s/\n/ /' | sort -t: -k3 -nr | head -n 10
+   38  cat output_hadoop/part-* | grep "URL:" | awk '{print $2}' | head -n 10
+   39  TOP10=$(cat output_hadoop/part-* | grep "URL:" | awk '{print $2}' | head -n 10)
+   40  cat output_hadoop/part-* * | awk -v RS="------------------------------" -v targets="$TOP10" '
+BEGIN { split(targets, t, " ") }
+{
+    for (i in t) {
+        if ($0 ~ "URL: " t[i] "$") {
+            print "------------------------------" $0
+        }
+    }
+}'
+   41  cat output_hadoop/part-* * | awk -v RS="------------------------------" -v targets="$TOP10" '
+BEGIN { split(targets, t, " ") }
+{
+    for (i in t) {
+        if ($0 ~ "URL: " t[i] "$") {
+            print "------------------------------" $0
+        }
+    }
+}'
+   42  cat output_hadoop/part-*  | awk -v RS="------------------------------" -v targets="$TOP10" '
+BEGIN { split(targets, t, " ") }
+{
+    for (i in t) {
+        if ($0 ~ "URL: " t[i] "$") {
+            print "------------------------------" $0
+        }
+    }
+}'
+   43  cat output_hadoop/part-*  | awk -v RS="------------------------------" -v targets="$TOP10" '
+BEGIN { split(targets, t, " ") }
+{
+    for (i in t) {
+        if ($0 ~ "URL: " t[i] "$") {
+            print "------------------------------" $0
+        }
+    }
+}'
+   44  cat output_hadoop/part-* | grep -E "URL:|Всего запросов:" | sed 'N;s/\n/ /' | sort -t: -k3 -nr | head -n 10
+   45  cat output_hadoop/part-* | awk -v RS="------------------------------" '/Аномально (много|мало): [^нет]/ {print $0 "------------------------------"}'
+   46  history
+
+---------------------------------------------------------------------------
+  98  docker-compose down
+   99  docker-compose up -d
+docker compose logs big-data-lab
+
+ 
+  232  kubectl logs -f hadoop-job-hldxz 
+  233  kubectl delete job hadoop-job
+  234  kubectl apply -f hadoop-job.yaml
+  235  kubectl get pods
+  236  kubectl get jobs
+  238  ls /mnt/c/Work/output
+  239  cat /mnt/c/Work/output/part-* | grep -E "URL:|Всего запросов:" | sed 'N;s/\n/ /' | sort -t: -k3 -nr | head -n 10
+  240  cat /mnt/c/Work/output/part-* | awk -v RS="------------------------------" '/Аномально (много|мало): [^нет]/ {print $0 "------------------------------"}'

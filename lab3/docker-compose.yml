@@ -1,0 +1,28 @@
+version: '3'
+services:
+  big-data-lab:
+    image: jupyter/pyspark-notebook:latest
+    ports:
+      - "8888:8888" # Интерфейс Jupyter (GUI + Progress Bar)
+      - "4040:4040" # Spark UI (мониторинг воркеров)
+    volumes:
+      - .:/home/jovyan/work
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+  # hadoop:
+  #   image: apache/hadoop:3.4.3
+  #   container_name: hadoop-node
+  #   hostname: localhost
+  #   tty: true
+  #   stdin_open: true
+  #   command: >
+  #     bash -c "
+  #       /opt/hadoop/sbin/start-dfs.sh &&
+  #       /opt/hadoop/sbin/start-yarn.sh &&
+  #       tail -f /dev/null
+  #     "
+  #   ports:
+  #     - "9870:9870" # HDFS GUI
+  #     - "8088:8088" # YARN GUI (Progress Bar)
+  #   volumes:
+  #     - .:/home/hadoop/lab
