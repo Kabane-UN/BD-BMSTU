@@ -1,0 +1,21 @@
+s3_analytics:
+  outputs:
+    dev:
+      type: clickhouse
+
+      host: clickhouse
+      port: 8123
+
+      user: admin
+      password: password123
+
+      schema: taxi
+
+      threads: 4
+
+    # prod:
+    #   type: duckdb
+    #   path: prod.duckdb
+    #   threads: 4
+
+  target: dev

@@ -1,0 +1,163 @@
+CREATE DATABASE taxi;
+
+
+CREATE TABLE taxi.yellow_trips
+(
+    VendorID Int64,
+
+    tpep_pickup_datetime DateTime,
+    tpep_dropoff_datetime DateTime,
+
+    passenger_count Float64,
+    trip_distance Float64,
+
+    RatecodeID Float64,
+
+    store_and_fwd_flag String,
+
+    PULocationID Int64,
+    DOLocationID Int64,
+
+    payment_type Int64,
+
+    fare_amount Float64,
+    extra Float64,
+    mta_tax Float64,
+    tip_amount Float64,
+    tolls_amount Float64,
+    improvement_surcharge Float64,
+    total_amount Float64,
+
+    congestion_surcharge Float64,
+    airport_fee Float64
+)
+ENGINE = MergeTree
+ORDER BY tpep_pickup_datetime;
+
+CREATE TABLE taxi.processed_snapshots
+(
+    snapshot_id UInt64,
+    processed_at DateTime DEFAULT now()
+)
+ENGINE = MergeTree
+ORDER BY snapshot_id;
+
+=========Витрина 1 средняя цена за километр=========
+CREATE TABLE taxi.mart_avg_price_per_km
+(
+    day Date,
+    avg_price_per_km Float64
+)
+ENGINE = MergeTree()
+ORDER BY day;
+
+SELECT
+    toDate(tpep_pickup_datetime) AS day,
+
+    avg(
+        total_amount / nullIf(trip_distance, 0)
+    ) AS avg_price_per_km
+
+FROM taxi.yellow_trips
+
+WHERE trip_distance > 0
+
+GROUP BY day
+
+ORDER BY day;
+
+=========Витрина 2 топ-10 зон посадки=========
+
+SELECT *
+FROM
+(
+    SELECT
+        max(toDate(tpep_pickup_datetime)) AS day,
+        toDayOfWeek(tpep_pickup_datetime) AS weekday,
+
+        PULocationID,
+
+        sum(total_amount) AS revenue,
+
+        row_number() OVER
+        (
+            PARTITION BY toDayOfWeek(tpep_pickup_datetime)
+            ORDER BY sum(total_amount) DESC
+        ) AS rn
+
+    FROM taxi.yellow_trips
+
+    GROUP BY
+        weekday,
+        PULocationID
+)
+WHERE rn <= 10
+
+ORDER BY
+    weekday,
+    revenue DESC;
+
+=========Витрина 3 распределение поездок по длительности=========
+
+WITH trips AS
+(
+    SELECT
+        dateDiff(
+            'minute',
+            tpep_pickup_datetime,
+            tpep_dropoff_datetime
+        ) AS duration_min,
+
+        total_amount
+
+    FROM taxi.yellow_trips
+),
+
+bucketed AS
+(
+    SELECT
+        CASE
+            WHEN duration_min < 5 THEN '0-5 min'
+            WHEN duration_min < 15 THEN '5-15 min'
+            WHEN duration_min < 30 THEN '15-30 min'
+            WHEN duration_min < 60 THEN '30-60 min'
+            ELSE '60+ min'
+        END AS bucket,
+
+        total_amount
+
+    FROM trips
+)
+
+SELECT
+    bucket,
+
+    count() AS trips_count,
+
+    median(total_amount) AS median_cost,
+
+    round(
+        count() * 100.0 /
+        (SELECT count() FROM taxi.yellow_trips),
+        2
+    ) AS percent_of_total
+
+FROM bucketed
+
+GROUP BY bucket
+
+ORDER BY trips_count DESC;
+
+
+
+
+
+
+
+
+-------------------------------------------
+docker compose down -v
+docker compose build --no-cache
+docker compose up -d
+docker exec -it clickhouse clickhouse-client
+docker exec -it airflow-scheduler bash

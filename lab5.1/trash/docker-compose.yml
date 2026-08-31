@@ -1,0 +1,173 @@
+services:
+
+  minio:
+    image: minio/minio
+    container_name: s3minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+      MINIO_DOMAIN: minio
+      MINIO_NOTIFY_WEBHOOK_ENABLE_primary: "on"
+      MINIO_NOTIFY_WEBHOOK_ENDPOINT_primary: "http://webhook:8000/minio-event"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+  dbt:
+    build: .
+
+    container_name: dbt
+
+    volumes:
+      - ./:/usr/app
+
+    working_dir: /usr/app
+
+    stdin_open: true
+    tty: true
+
+    entrypoint: []
+
+    command: tail -f /dev/null
+  mc:
+    image: minio/mc
+    depends_on:
+      - minio
+      - webhook
+    volumes:
+      - ./data:/import
+    entrypoint:
+    - /bin/sh
+    - -c
+    - |
+        until mc alias set local http://minio:9000 admin password123; do
+          sleep 2;
+        done;
+
+        mc mb -p local/warehouse;
+
+        mc event add local/warehouse \
+          arn:minio:sqs::primary:webhook \
+          --event put;
+  metabase:
+    image: metabase/metabase
+
+    ports:
+      - "3000:3000"
+    
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+
+    volumes:
+      - ./metabase-data:/metabase-data
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: myclickhouse
+    ports:
+      - "8123:8123"
+      - "9002:9000"
+    environment:
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: password123
+      CLICKHOUSE_DB: taxi
+  # airflow:
+  #   image: apache/airflow
+
+  #   user: "0:0"
+
+  #   ports:
+  #     - "8080:8080"
+
+  #   volumes:
+  #     - ./dags:/opt/airflow/dags
+  #     - /var/run/docker.sock:/var/run/docker.sock
+
+  #   command: standalone
+  airflow-db:
+    image: postgres:15
+    container_name: airflow-db1
+
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+
+    ports:
+      - "5433:5432"
+  airflow-init:
+    image: apache/airflow
+
+    depends_on:
+      - airflow-db
+
+    environment:
+      AIRFLOW__API__SECRET_KEY: mysecretkey
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+
+    command: >
+      bash -c "
+      pip install apache-airflow-providers-fab &&
+      airflow db migrate &&
+      airflow users create --username airflow --password airflow --firstname admin --lastname admin --role Admin --email admin@example.com
+      "
+  airflow-api:
+    image: apache/airflow
+
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+    ports:
+      - '8080:8080'
+
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__API__SECRET_KEY: mysecretkey
+      AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+      
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    command: api-server
+
+  airflow-scheduler:
+    image: apache/airflow
+
+    container_name: airflow-scheduler1
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+    environment:
+      AIRFLOW__API__SECRET_KEY: mysecretkey
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    command: airflow scheduler
+  webhook:
+    image: python:3.13-slim
+
+    working_dir: /app
+
+    volumes:
+      - ./webhook:/app
+
+    command: >
+      sh -c "
+        pip install fastapi uvicorn requests &&
+        uvicorn app:app --host 0.0.0.0 --port 8000
+      "
+
+    ports:
+      - "8000:8000"

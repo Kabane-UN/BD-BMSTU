@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+*.zip
+*.parquet
+*tar.gz
+metastore_db
+ivy-cache
+spark-ivy-cache
+logs
+*.db
+*.duckdb

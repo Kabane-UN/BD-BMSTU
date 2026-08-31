@@ -1,0 +1,102 @@
+services:
+
+  minio:
+    image: minio/minio
+    container_name: s3minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+      MINIO_DOMAIN: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+  dbt:
+    build: .
+
+    container_name: dbt
+
+    ports:
+      - "8085:8080"
+
+    volumes:
+      - ./:/usr/app
+
+    working_dir: /usr/app
+
+    stdin_open: true
+    tty: true
+
+    entrypoint: []
+
+    command: tail -f /dev/null
+  mc:
+    image: minio/mc
+    depends_on:
+      - minio
+    volumes:
+      - ./data:/import
+    entrypoint:
+    - /bin/sh
+    - -c
+    - |
+        until mc alias set local http://minio:9000 admin password123; do
+          sleep 2;
+        done;
+
+        mc mb -p local/warehouse;
+
+        tail -f /dev/null
+  metabase:
+    image: metabase/metabase
+
+    ports:
+      - "3000:3000"
+    
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+
+    volumes:
+      - ./metabase-data:/metabase-data
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: myclickhouse
+    ports:
+      - "8123:8123"
+      - "9002:9000"
+    environment:
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: password123
+      CLICKHOUSE_DB: taxi
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.air
+
+    user: "0:0"
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./ivy-cache:/root/.ivy2
+
+    command: standalone
+  spark-iceberg:
+    image: tabulario/spark-iceberg:latest
+    container_name: spark-iceberg1
+    ports:
+      - "8888:8888"
+      - "10000:10000"
+    environment:
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password123
+      AWS_REGION: us-east-1
+
+    volumes:
+      - ./data:/data
+      - ./spark-conf:/opt/spark/conf
+      - ./notebooks:/home/iceberg/notebooks
+      - ./spark-ivy-cache:/root/.ivy2
